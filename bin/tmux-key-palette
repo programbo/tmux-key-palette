@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+selected="$(
+  awk '
+    FNR == NR {
+      if (NF > 1) {
+        key = $1
+        $1 = ""
+        sub(/^ +/, "")
+        notes[key] = $0
+      }
+      next
+    }
+
+    /^bind-key/ {
+      repeat = ""
+      i = 2
+      if ($i == "-r") {
+        repeat = "*"
+        i++
+      }
+      if ($i == "-T") {
+        key = $(i + 2)
+        command_start = i + 3
+      } else {
+        key = $i
+        command_start = i + 1
+      }
+
+      command = ""
+      for (j = command_start; j <= NF; j++) {
+        command = command (j == command_start ? "" : " ") $j
+      }
+
+      display_key = key
+      lookup_key = key
+      sub(/^\\/, "", display_key)
+      sub(/^\\/, "", lookup_key)
+
+      description = notes[lookup_key]
+      if (description == "") {
+        description = command
+        sub(/ .*/, "", description)
+        gsub(/-/, " ", description)
+        description = toupper(substr(description, 1, 1)) substr(description, 2)
+      }
+
+      printf "%-10s\t%-50s\t%s\n", repeat display_key, description, command
+    }
+  ' <(tmux list-keys -T prefix -N) <(tmux list-keys -T prefix) |
+    sort -f -t $'\t' -k2,2 |
+    fzf \
+      --prompt='tmux key> ' \
+      --header=$'Key       \tDescription\nPrefix key bindings. Enter runs the selected command.' \
+      --delimiter='\t' \
+      --with-nth=1,2 \
+      --no-hscroll \
+      --preview='printf "%s\n" {3..}' \
+      --preview-window='down:3:wrap'
+)"
+
+[[ -z "$selected" ]] && exit 0
+
+command="${selected#*$'\t'}"
+command="${command#*$'\t'}"
+tmux "$command"
